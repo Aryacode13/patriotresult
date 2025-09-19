@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/tabbed_results_screen.dart';
+import 'screens/consolidated_results_screen.dart';
 import 'config/supabase_config.dart';
 
 void main() async {
@@ -30,7 +30,7 @@ class ResultPatriotApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const TabbedResultsScreen(),
+      home: const ConsolidatedResultsScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

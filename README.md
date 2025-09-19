@@ -103,3 +103,4 @@ The app supports real-time updates through Supabase's real-time subscriptions. W
 ## License
 
 This project is created for the Patriot race event.
+
