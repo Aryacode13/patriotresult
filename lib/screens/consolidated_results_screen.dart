@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'package:intl/intl.dart';
+
 
 class Runner {
   final int id;
@@ -122,31 +124,44 @@ class Runner {
     }
   }
 
+  bool get hasValidTime => totalTime != null;
+
+  static final DateFormat _cpFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+
   DateTime? _parseTime(String timeString) {
     if (timeString.isEmpty) return null;
-    
+
     try {
-      if (timeString.contains('T') || timeString.contains(' ')) {
-        return DateTime.parse(timeString);
-      }
-      
-      final parts = timeString.split(':');
-      if (parts.length >= 2) {
-        final now = DateTime.now();
-        final hour = int.parse(parts[0]);
-        final minute = int.parse(parts[1]);
-        final second = parts.length > 2 ? int.parse(parts[2]) : 0;
-        
-        return DateTime(now.year, now.month, now.day, hour, minute, second);
-      }
-      
-      return null;
-    } catch (e) {
+      // Primary: strict parse for "yyyy-MM-dd HH:mm:ss"
+      // (local time by default)
+      return _cpFormat.parseStrict(timeString);
+    } catch (_) {
+      // Fallback 1: ISO or other DateTime.parse-compatible strings
+      try {
+        if (timeString.contains('T') || timeString.contains(' ')) {
+          return DateTime.parse(timeString);
+        }
+      } catch (_) {}
+
+      // Fallback 2: "HH:mm[:ss]" same-day times
+      try {
+        final parts = timeString.split(':');
+        if (parts.length >= 2) {
+          final now = DateTime.now();
+          final hour = int.parse(parts[0]);
+          final minute = int.parse(parts[1]);
+          final second = parts.length > 2 ? int.parse(parts[2]) : 0;
+          return DateTime(now.year, now.month, now.day, hour, minute, second);
+        }
+      } catch (_) {}
+
       return null;
     }
   }
 
-  bool get isFinished => !isDnf && !isDns && cp9.isNotEmpty;
+
+  bool get isFinished => !isDnf && !isDns && cp9.isNotEmpty && totalTime != null;
+
 }
 
 class ConsolidatedResultsScreen extends StatefulWidget {
@@ -354,6 +369,43 @@ class _ResultsTableWidgetState extends State<_ResultsTableWidget> {
     filteredRunners = List<Runner>.from(allRunners);
   }
 
+  // Strict parser for "yyyy-MM-dd HH:mm:ss"
+  static final DateFormat _cpFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+
+  DateTime? _parseCpTime(String timeString) {
+    if (timeString.isEmpty) return null;
+    try {
+      return _cpFormat.parseStrict(timeString); // local time
+    } catch (_) {
+      try {
+        if (timeString.contains('T') || timeString.contains(' ')) {
+          return DateTime.parse(timeString);
+        }
+      } catch (_) {}
+      try {
+        final parts = timeString.split(':');
+        if (parts.length >= 2) {
+          final now = DateTime.now();
+          final h = int.parse(parts[0]);
+          final m = int.parse(parts[1]);
+          final s = parts.length > 2 ? int.parse(parts[2]) : 0;
+          return DateTime(now.year, now.month, now.day, h, m, s);
+        }
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  String _formatSplit(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    return h > 0
+        ? '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+
   @override
   void didUpdateWidget(covariant _ResultsTableWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -523,89 +575,119 @@ class _ResultsTableWidgetState extends State<_ResultsTableWidget> {
             ),
           ),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${runner.name} (Bib: ${runner.bib})',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...List.generate(maxCp + 1, (index) {
-                  final cpLabel = index == 0 ? 'CP0 (Start)' : 'CP$index';
-                  final cpTime = index == 0 ? runner.cp0 : _cpValueByIndex(runner, index);
-                  final isReached = cpTime.isNotEmpty;
-                  
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isReached ? Colors.green.shade50 : Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isReached ? Colors.green.shade200 : Colors.grey.shade300,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          cpLabel,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: isReached ? Colors.green.shade800 : Colors.grey.shade600,
-                          ),
-                        ),
-                        Text(
-                          isReached ? cpTime : 'Not reached',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            color: isReached ? Colors.green.shade700 : Colors.grey.shade500,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: runner.cp9.isNotEmpty ? Colors.blue.shade50 : Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: runner.cp9.isNotEmpty ? Colors.blue.shade200 : Colors.grey.shade300,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'CP9 (Finish)',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: runner.cp9.isNotEmpty ? Colors.blue.shade800 : Colors.grey.shade600,
-                        ),
-                      ),
-                      Text(
-                        runner.cp9.isNotEmpty ? runner.cp9 : 'Not reached',
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          color: runner.cp9.isNotEmpty ? Colors.blue.shade700 : Colors.grey.shade500,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+  child: Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        '${runner.name} (Bib: ${runner.bib})',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+        ),
+      ),
+      const SizedBox(height: 16),
+      // CP splits (skip CP0)
+      ...List.generate(maxCp, (index) {
+        final cpIndex = index + 1; // CP1 … CPmax
+        final cpTime = _cpValueByIndex(runner, cpIndex);
+        final baseTime = runner.cp0;
+        Duration? split;
+        if (cpTime.isNotEmpty && baseTime.isNotEmpty) {
+          final start = _parseCpTime(baseTime);
+          final now = _parseCpTime(cpTime);
+          if (start != null && now != null) {
+            split = now.difference(start);
+          }
+        }
+
+        final isReached = split != null;
+        final label = 'CP$cpIndex';
+
+        String formatSplit(Duration d) {
+          final h = d.inHours;
+          final m = d.inMinutes.remainder(60);
+          final s = d.inSeconds.remainder(60);
+          return h > 0
+              ? '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+              : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isReached ? Colors.green.shade50 : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isReached ? Colors.green.shade200 : Colors.grey.shade300,
             ),
           ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: isReached ? Colors.green.shade800 : Colors.grey.shade600,
+                ),
+              ),
+              Text(
+                isReached ? formatSplit(split!) : 'Not reached',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  color: isReached ? Colors.green.shade700 : Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+      // Finish split (cp9)
+      Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: runner.cp9.isNotEmpty ? Colors.blue.shade50 : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: runner.cp9.isNotEmpty ? Colors.blue.shade200 : Colors.grey.shade300,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Finish',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: runner.cp9.isNotEmpty ? Colors.blue.shade800 : Colors.grey.shade600,
+              ),
+            ),
+            Text(
+              () {
+                if (runner.cp9.isEmpty || runner.cp0.isEmpty) return 'Not reached';
+                final start = _parseCpTime(runner.cp0);
+                final end = _parseCpTime(runner.cp9);
+                if (start == null || end == null) return 'Not reached';
+                final split = end.difference(start);
+                return _formatSplit(split);
+              }(),
+              style: TextStyle(
+                fontFamily: 'monospace',
+                color: runner.cp9.isNotEmpty ? Colors.blue.shade700 : Colors.grey.shade500,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
+),
+
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -846,7 +928,7 @@ class _ResultsTableWidgetState extends State<_ResultsTableWidget> {
               final maxCp = _categoryMaxCpForRunner(runner);
               final lastCp = _lastReachedCp(runner, maxCp);
               final lastCpTime = lastCp > 0 ? _cpValueByIndex(runner, lastCp) : '';
-              final label = lastCp > 0 ? 'CP$lastCp' : 'CP0';
+              final label = lastCp > 0 ? 'CP$lastCp' : 'START';
               
               return Row(
                 mainAxisSize: MainAxisSize.min,
@@ -942,7 +1024,7 @@ class _ResultsTableWidgetState extends State<_ResultsTableWidget> {
         final maxCp = _categoryMaxCpForRunner(runner);
         final lastCp = _lastReachedCp(runner, maxCp);
         final lastCpTime = lastCp > 0 ? _cpValueByIndex(runner, lastCp) : '';
-        final label = lastCp > 0 ? 'CP$lastCp' : 'CP0';
+        final label = lastCp > 0 ? 'CP$lastCp' : 'START';
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
