@@ -246,6 +246,7 @@ class _ConsolidatedResultsScreenState extends State<ConsolidatedResultsScreen> w
         final response = await client
             .from(SupabaseConfig.runnersTable)
             .select()
+            .eq('is_active', true)
             .order('id', ascending: true)
             .range(offset, offset + limit - 1);
         
@@ -273,6 +274,7 @@ class _ConsolidatedResultsScreenState extends State<ConsolidatedResultsScreen> w
       final response = await client
           .from(SupabaseConfig.runnersTable)
           .select()
+          .eq('is_active', true)
           .eq('category', category)
           .order('cp9', ascending: true);
       
